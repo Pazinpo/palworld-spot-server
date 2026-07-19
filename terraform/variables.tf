@@ -118,3 +118,9 @@ variable "metrics_check_interval_minutes" {
   type        = number
   default     = 5
 }
+
+variable "snapshot_retention_count" {
+  description = "세이브 데이터 EBS 볼륨의 일일 자동 스냅샷을 몇 개까지 보관할지"
+  type        = number
+  default     = 7
+}

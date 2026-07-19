@@ -23,6 +23,12 @@
 - CPUCreditBalance를 CloudWatch로 감시한다 (t2/t3/t4g 계열로 바꿔서 쓸
   때만 알람이 생성됨 - m7i-flex는 크레딧 방식이 아니라 애초에 이 문제가
   없다).
+- CPU/네트워크/접속자 수를 CloudWatch 대시보드(`palworld-server`) 하나로
+  모아서 본다. 접속자 수는 5분마다 같은 Lambda가 REST API로 확인해서
+  커스텀 지표로 기록.
+- 세이브 데이터 EBS 볼륨은 매일 새벽 자동 스냅샷(최근 7개 보관)까지
+  찍어둔다. 인스턴스가 죽어도 볼륨은 살아있지만, 볼륨 자체가 손상되는
+  경우까지 대비.
 
 아키텍처 자세한 내용이랑 왜 이렇게 짰는지는 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)에 정리해뒀다.
 

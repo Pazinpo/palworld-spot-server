@@ -93,6 +93,14 @@ SSH(22번 포트)는 열지 않는다. 관리 접속은 EC2 인스턴스 역할�
   `attach-volume` 호출을 하므로 "이미 붙어있음" 에러는 무시하고 넘어가도록
   멱등하게 작성했다.
 
+`prevent_destroy`와 인스턴스 교체 시 재부착은 "인스턴스가 죽어도 볼륨은
+살아있다"는 것만 보장하지, 볼륨 자체의 손상/오삭제까지 막아주지는
+않는다. 그래서 `terraform/backup.tf` 에 **Data Lifecycle Manager(DLM)**로
+매일 새벽(KST 02:00) 자동 스냅샷을 찍고 최근 며칠치(`snapshot_retention_count`
+변수, 기본 7개)를 보관하도록 해뒀다. DLM 서비스 자체는 무료고, 스냅샷은
+실사용 용량 기준 증분 저장이라(서울 리전 GB당 월 $0.05) 세이브처럼 작은
+볼륨은 비용이 크지 않다.
+
 ## 4. 스팟 중단 대응 - EventBridge + Lambda
 
 `terraform/eventbridge.tf` 는 계정 전체의 `EC2 Spot Instance Interruption
@@ -165,6 +173,17 @@ Scheduled Event로 깨운다. Lambda는 이벤트의 `detail-type` 으로 두 �
 - **주기 체크 비용/지연**: 기본 30분 간격이라, 스팟 용량이 재확보돼도
   최대 30분은 온디맨드 요금이 더 나갈 수 있다. 간격을 줄이면 복귀는
   빨라지지만 SSM Run Command 호출이 늘어난다 (비용은 미미한 수준).
+- **user_data와 실행 중인 인스턴스**: `aws_instance.palworld`에
+  `lifecycle.ignore_changes = [user_data]` 를 걸어뒀다. `scripts/install-palworld.sh`
+  를 고치면 렌더링된 `local.user_data`가 바뀌는데, 이걸 이미 떠있는
+  인스턴스에 반영하려면 AWS가 정지->수정->재시작을 거쳐야 한다. 그런데
+  persistent 스팟 인스턴스를 이렇게 수동으로 정지시키면 spot request가
+  `disabled` 상태로 빠지고, 바로 이어지는 재시작 시도가
+  `IncorrectSpotRequestState` 에러로 실패할 수 있다(실제로 이 문제로
+  서버가 잠깐 다운된 적 있음 - 몇 초~몇십 초 뒤 상태가 정리되면 수동으로
+  `start-instances`는 가능했다). 그래서 이미 떠있는 인스턴스는 그대로
+  두고, 스크립트 변경사항은 `aws_ssm_parameter.user_data`를 통해 앞으로
+  Lambda가 새로 띄우는 인스턴스에만 반영되게 했다.
 
 ## 5. 모니터링 - CPUCreditBalance 알람
 
@@ -175,7 +194,28 @@ Scheduled Event로 깨운다. Lambda는 이벤트의 `detail-type` 으로 두 �
 연속 떨어지면 알람이 울리고, `alarm_notification_email` 변수를 채우면
 이메일(SNS)로 알림을 받는다.
 
-## 6. 설치 자동화 - User Data
+## 6. 모니터링 - CloudWatch 대시보드 & 접속자 수 지표
+
+`terraform/dashboard.tf` 는 CPU 사용률, 네트워크 In/Out(둘 다 EC2 기본
+제공 지표), 접속자 수(커스텀 지표)를 한 화면에서 보는 대시보드다
+(`palworld-server`라는 이름으로 CloudWatch 콘솔에 생성됨).
+
+접속자 수는 AWS가 원래 알 수 있는 정보가 아니라 팰월드 REST API에서만
+나오는 값이라, `lambda/spot_interruption_handler.py`에 세 번째 스케줄
+작업(`task=record_metrics`, 기본 5분 간격, `metrics_check_interval_minutes`
+변수)을 추가해서 SSM으로 접속자 수를 확인하고 `<project>/GameServer`
+네임스페이스의 `PlayerCount` 커스텀 지표로 남긴다. 스팟 중단 대응/스팟
+복귀 체크와 같은 Lambda를 재사용하되, EventBridge 타겟의 `input`으로
+`{"task": "..."}` 를 넘겨서 세 가지 트리거(중단 예고/복귀 체크/지표 기록)를
+구분한다.
+
+CPU/네트워크 위젯은 특정 인스턴스 ID를 지정하는 대신 `SEARCH('{AWS/EC2,
+InstanceId} MetricName="..."', ...)` 표현식을 써서, 인스턴스가
+스팟↔온디맨드로 바뀌어도 대시보드를 수동으로 고칠 필요가 없게 했다
+(계정에 팰월드 인스턴스 하나만 있다는 전제 - 개인 프로젝트 규모에서는
+문제 없음).
+
+## 7. 설치 자동화 - User Data
 
 `scripts/install-palworld.sh` 가 EC2 User Data로 실행되며 다음을 한다.
 

@@ -11,7 +11,7 @@
                         └────────────┬─────────────┘
                                      │
                         ┌────────────▼─────────────┐
-                        │   EC2 (t3.large, Spot)    │◄── 세이브 데이터 EBS 볼륨
+                        │   EC2 (2vCPU/8GB, Spot)   │◄── 세이브 데이터 EBS 볼륨
                         │   Palworld Dedicated Srv  │    (루트 볼륨과 분리)
                         └────────────┬─────────────┘
                                      │ Spot Interruption Warning (2분 전)
@@ -41,6 +41,27 @@
 - "접속자가 0명이면 그냥 종료되게 두고, 나중에 스팟 용량 재확보되면 자동 재기동"
 - 정지된 인스턴스는 루트/데이터 EBS 볼륨이 그대로 붙어있고, Elastic IP도
   연결이 풀리지 않으므로 재기동 시 세이브 데이터와 접속 IP가 모두 유지된다.
+
+### 인스턴스 타입 - t3.large가 안 되면 m7i-flex.large
+
+원래는 `t3.large`(2vCPU/8GB)를 기본값으로 잡았는데, AWS 계정이 **Free
+Plan**(free-tier eligible 인스턴스 타입만 허용)이면 `RunInstances`가
+`InvalidParameterCombination: The specified instance type is not eligible
+for Free Tier` 에러로 막힌다. 이 경우 사양이 동일한(2vCPU/8GB) 대안으로
+`m7i-flex.large`를 쓰면 된다 - free-tier eligible이고 스팟도 지원한다.
+
+```bash
+# 계정에서 실제로 허용되는 free-tier 타입 확인
+aws ec2 describe-instance-types --region ap-northeast-2 \
+  --filters Name=free-tier-eligible,Values=true \
+  --query 'InstanceTypes[*].InstanceType' --output table
+```
+
+`m7i-flex`/`c7i-flex` 계열은 T 계열과 달리 **CPU 크레딧 방식이 아니라
+항상 일정한 baseline 성능을 보장**하는 타입이라, 오히려 크레딧 고갈로
+인한 렉 걱정 자체가 없다. 대신 `CPUCreditBalance` 지표가 존재하지
+않으므로, `terraform/cloudwatch.tf` 의 알람은 `instance_type`이 t2/t3/t4g
+계열(정규식 `^t[234]g?\.`)일 때만 생성되도록 조건부(`count`)로 처리했다.
 
 ## 2. 네트워크 - 보안그룹
 

@@ -17,9 +17,9 @@ variable "availability_zone" {
 }
 
 variable "instance_type" {
-  description = "팰월드 서버 인스턴스 타입"
+  description = "팰월드 서버 인스턴스 타입. 계정이 Free Plan(free-tier eligible 타입만 허용)이라면 t3.large 대신 m7i-flex.large(동일하게 2vCPU/8GB, spot 지원, free-tier eligible) 같은 걸 써야 한다. `aws ec2 describe-instance-types --filters Name=free-tier-eligible,Values=true` 로 계정에서 허용되는 타입을 확인할 수 있다."
   type        = string
-  default     = "t3.large"
+  default     = "m7i-flex.large"
 }
 
 variable "spot_max_price" {

@@ -99,25 +99,51 @@ Lambda의 판단 로직:
       하면 된다.
    5. 기존 스팟 인스턴스를 명시적으로 종료한다.
 
+### 온디맨드 -> 스팟 자동 복귀
+
+`terraform/eventbridge.tf` 의 `aws_cloudwatch_event_rule.spot_reclaim_schedule` 이
+기본 30분(`spot_reclaim_check_interval_minutes` 변수)마다 같은 Lambda를
+Scheduled Event로 깨운다. Lambda는 이벤트의 `detail-type` 으로 두 트리거를
+구분해서 처리한다 (`handler` 함수 참고).
+
+이 스케줄 체크는:
+
+1. `Project` 태그가 붙은 실행 중 인스턴스를 찾는다.
+2. 이미 스팟이면(`InstanceLifecycle == "spot"`) 아무것도 안 하고 끝낸다.
+3. 온디맨드로 떠있다면 - 즉 과거에 중단 예고 때 대체 기동이 있었다는 뜻 -
+   접속자 수를 확인한다.
+4. **접속자가 있으면** 아무것도 하지 않고 다음 주기를 기다린다 (플레이
+   중인 세션을 스팟 전환 때문에 끊고 싶지 않으므로).
+5. **접속자가 없으면** 새 스팟 인스턴스(persistent+stop) 기동을 시도한다.
+   스팟 용량이 아직 없어서 `RunInstances`가 실패하면(`ClientError`) 그냥
+   로그만 남기고 다음 주기에 다시 시도한다. 성공하면 세이브 볼륨과
+   Elastic IP를 새 스팟 인스턴스로 옮기고 온디맨드 인스턴스를 종료한다.
+
+즉, 스팟↔온디맨드 전환은 양방향 모두 "접속자가 없을 때만 건드린다"는
+같은 원칙으로 동작한다. 스팟 중단 예고 시점에 접속자가 있으면 온디맨드로,
+그 뒤 접속자가 빠지면 다시 스팟으로 - 자연스럽게 왔다갔다 하되, 항상
+안전한 타이밍에만 전환이 일어난다.
+
 ### 한계 / 운영 노트
 
 - **2분이라는 시간 제약**: 스팟 중단 예고는 AWS 사양상 항상 2분 전에
   온다. Lambda가 접속자 확인 + 온디맨드 기동 + 볼륨/EIP 이전을 그 안에
   끝내야 하므로 다소 빠듯하다 (`variables.tf`의 `lambda_timeout` 기본값
   110초). 네트워크/AWS API 지연이 겹치면 짧은 접속 끊김이 발생할 수 있다.
-- **Terraform state 드리프트**: Lambda가 온디맨드로 대체 기동하면
+  (온디맨드->스팟 방향은 예고 시간에 쫓기지 않으므로 이 제약이 없다.)
+- **Terraform state 드리프트**: Lambda가 인스턴스를 대체 기동하면
   `aws_instance.palworld`, `aws_eip_association.palworld`,
-  `aws_cloudwatch_metric_alarm.cpu_credit_balance` 는 여전히 "죽은 옛
-  인스턴스"를 가리키게 된다. 상황이 안정된 뒤에는
-  `terraform apply -replace="aws_instance.palworld"` 로 재조정하거나,
-  실제로 살아있는 온디맨드 인스턴스를 그대로 쓰다가 나중에 수동으로
-  스팟으로 되돌리는 식으로 운영한다. 이 프로젝트는 "장애조치(failover)"에
-  최적화되어 있고, 그 이후의 재조정은 자동화하지 않았다.
+  `aws_cloudwatch_metric_alarm.cpu_credit_balance` 는 Terraform state 상으로는
+  여전히 "이전 인스턴스"를 가리키게 된다. Lambda가 실제 인프라는 정상적으로
+  옮겨주지만, `terraform plan`을 돌리면 죽은 인스턴스에 대한 diff가 보일 수
+  있다 - 실사용에는 지장 없지만, Terraform으로 다시 관리하고 싶다면
+  `terraform apply -replace="aws_instance.palworld"` 로 재조정하면 된다.
 - **CPUCreditBalance 알람**도 위와 같은 이유로 초기 인스턴스 ID를
-  대상으로 생성된다. 대체 기동 이후에는 알람을 다시 만들어줘야 한다.
-- **스팟 자동 복귀는 하지 않음**: 온디맨드로 넘어간 뒤 비용 절감을 위해
-  다시 스팟으로 자동 전환하는 로직은 없다. 필요하면 수동으로
-  전환하거나, 추후 별도 스케줄 Lambda로 확장할 수 있다.
+  대상으로 생성된다. 대체 기동이 여러 번 반복되면 알람이 이미 없어진
+  인스턴스를 가리키게 될 수 있어, 필요하면 다시 만들어줘야 한다.
+- **주기 체크 비용/지연**: 기본 30분 간격이라, 스팟 용량이 재확보돼도
+  최대 30분은 온디맨드 요금이 더 나갈 수 있다. 간격을 줄이면 복귀는
+  빨라지지만 SSM Run Command 호출이 늘어난다 (비용은 미미한 수준).
 
 ## 5. 모니터링 - CPUCreditBalance 알람
 

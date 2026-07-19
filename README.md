@@ -16,6 +16,9 @@
 - EventBridge가 스팟 중단 2분 전 예고를 잡아서 Lambda를 깨운다. Lambda는
   SSM으로 접속자 수를 확인하고, 사람이 있으면 온디맨드 인스턴스를 새로
   띄운 뒤 EBS 볼륨이랑 Elastic IP를 그쪽으로 옮긴다.
+- 온디맨드로 넘어간 뒤에는 30분마다 같은 Lambda가 다시 깨서, 접속자가
+  없는 틈에 스팟으로 자동 복귀를 시도한다. 스팟 용량이 아직 없으면 다음
+  주기에 다시 시도.
 - CPUCreditBalance를 CloudWatch로 감시한다. t3 계열이라 크레딧 떨어지면
   렉이 심해지는데, 미리 알람 받으려고 넣었다.
 
@@ -91,12 +94,13 @@ docs/         아키텍처 설명
 
 - 스팟 중단 예고는 항상 2분 전이라, Lambda가 그 안에 전환을 끝내야 한다.
   네트워크나 API가 좀 느려지면 짧게 끊길 수 있다.
-- Lambda가 온디맨드로 넘긴 뒤에는 Terraform state가 죽은 인스턴스를 계속
-  물고 있게 된다. `terraform apply -replace="aws_instance.palworld"`로
-  정리해줘야 함 - 자세한 건 [ARCHITECTURE.md](docs/ARCHITECTURE.md#한계--운영-노트) 참고.
+- Lambda가 인스턴스를 대체 기동한 뒤에는 Terraform state가 예전 인스턴스를
+  계속 물고 있게 된다. 실제 서버는 정상 동작하지만 `terraform plan`에는
+  diff가 보일 수 있고, Terraform으로 다시 관리하고 싶으면
+  `terraform apply -replace="aws_instance.palworld"`로 정리하면 된다 -
+  자세한 건 [ARCHITECTURE.md](docs/ARCHITECTURE.md#한계--운영-노트) 참고.
 - 접속자 수 확인이 애매하게 실패하면(REST API 무응답 등) 그냥 "사람 있다"고
-  치고 온디맨드로 넘긴다. 괜히 전환했다가 낭비되는 비용보다 끊기는 게 더
-  나쁘다고 판단해서.
-- 온디맨드로 넘어간 뒤 다시 스팟으로 자동 복귀하는 로직은 없다. 지금은
-  수동으로 정리하는 걸로 두고 있고, 나중에 여유 생기면 스케줄러로 자동화할
-  생각.
+  치고 넘어간다. 괜히 전환했다가 낭비되는 비용보다 끊기는 게 더 나쁘다고
+  판단해서 - 스팟->온디맨드, 온디맨드->스팟 양방향 다 마찬가지.
+- 스팟 복귀 체크가 기본 30분 간격이라, 용량이 재확보돼도 최대 30분 정도는
+  온디맨드 요금을 더 낼 수 있다.

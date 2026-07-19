@@ -106,3 +106,9 @@ variable "lambda_timeout" {
   type        = number
   default     = 100
 }
+
+variable "spot_reclaim_check_interval_minutes" {
+  description = "온디맨드로 대체 기동된 상태일 때, 스팟으로 되돌릴 수 있는지 주기적으로 확인하는 간격(분)"
+  type        = number
+  default     = 30
+}

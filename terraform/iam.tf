@@ -111,6 +111,12 @@ data "aws_iam_policy_document" "lambda_failover" {
     actions   = ["ssm:GetParameter"]
     resources = [aws_ssm_parameter.user_data.arn]
   }
+
+  statement {
+    sid       = "RecordPlayerCountMetric"
+    actions   = ["cloudwatch:PutMetricData"]
+    resources = ["*"] # PutMetricData는 리소스 수준 제한을 지원하지 않음
+  }
 }
 
 resource "aws_iam_role_policy" "lambda_failover" {

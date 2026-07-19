@@ -29,6 +29,7 @@ resource "aws_cloudwatch_event_target" "spot_reclaim_lambda" {
   rule      = aws_cloudwatch_event_rule.spot_reclaim_schedule.name
   target_id = "spot-reclaim-handler"
   arn       = aws_lambda_function.spot_interruption_handler.arn
+  input     = jsonencode({ task = "reclaim_check" })
 }
 
 resource "aws_lambda_permission" "allow_eventbridge_schedule" {
@@ -37,4 +38,27 @@ resource "aws_lambda_permission" "allow_eventbridge_schedule" {
   function_name = aws_lambda_function.spot_interruption_handler.function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.spot_reclaim_schedule.arn
+}
+
+# 접속자 수를 주기적으로 확인해서 CloudWatch 커스텀 지표로 기록한다
+# (CloudWatch 대시보드에서 CPU/네트워크 지표와 같이 볼 수 있다).
+resource "aws_cloudwatch_event_rule" "metrics_schedule" {
+  name                = "${var.project_name}-metrics-schedule"
+  description         = "접속자 수를 CloudWatch 커스텀 지표로 주기 기록"
+  schedule_expression = "rate(${var.metrics_check_interval_minutes} minutes)"
+}
+
+resource "aws_cloudwatch_event_target" "metrics_lambda" {
+  rule      = aws_cloudwatch_event_rule.metrics_schedule.name
+  target_id = "metrics-handler"
+  arn       = aws_lambda_function.spot_interruption_handler.arn
+  input     = jsonencode({ task = "record_metrics" })
+}
+
+resource "aws_lambda_permission" "allow_eventbridge_metrics_schedule" {
+  statement_id  = "AllowExecutionFromEventBridgeMetricsSchedule"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.spot_interruption_handler.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.metrics_schedule.arn
 }

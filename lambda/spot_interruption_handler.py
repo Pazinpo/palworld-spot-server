@@ -8,12 +8,21 @@
    - 접속자가 있으면: 온디맨드 인스턴스로 즉시 대체 기동하고
      세이브 데이터 EBS 볼륨 + Elastic IP를 새 인스턴스로 옮긴다.
 
-2) 주기적인 Scheduled Event (기본 30분 간격)
+2) 주기적인 스팟 복귀 체크 (기본 30분 간격, task=reclaim_check)
    - 지금 떠있는 인스턴스가 이미 스팟이면 아무것도 안 한다.
    - 온디맨드로 떠있다면(과거에 1번 케이스로 넘어간 상태) 접속자 수를 확인해서
      0명일 때만 스팟 인스턴스를 새로 띄우는 걸 시도하고, EBS/EIP를 옮긴 뒤
      온디맨드 인스턴스를 종료한다. 스팟 용량이 아직 없으면 그냥 넘어가고
      다음 주기에 다시 시도한다.
+
+3) 주기적인 지표 기록 (기본 5분 간격, task=record_metrics)
+   - 접속자 수를 확인해서 CloudWatch 커스텀 지표(<project>/GameServer
+     PlayerCount)로 기록한다. CloudWatch 대시보드에서 CPU/네트워크와
+     같이 시계열로 볼 수 있다.
+
+2), 3)번은 둘 다 EventBridge 스케줄 규칙이 트리거하는데, EventBridge의
+기본 Scheduled Event 포맷 대신 `input`으로 `{"task": "..."}` 를 넘겨서
+어떤 스케줄인지 구분한다 (terraform/eventbridge.tf 참고).
 
 접속자 수 확인이 실패한 경우(REST API 무응답 등)에는 "접속자가 있다"고
 안전하게 간주한다 - 불필요한 전환 비용보다 접속 끊김/세이브 유실이 훨씬 더
@@ -28,6 +37,7 @@ from botocore.exceptions import ClientError
 
 ec2 = boto3.client("ec2")
 ssm = boto3.client("ssm")
+cloudwatch = boto3.client("cloudwatch")
 
 PROJECT_NAME = os.environ["PROJECT_NAME"]
 DATA_VOLUME_ID = os.environ["DATA_VOLUME_ID"]
@@ -60,12 +70,12 @@ PLAYER_COUNT_SCRIPT = (
 
 
 def handler(event, context):
-    detail_type = event.get("detail-type")
-
-    if detail_type == "EC2 Spot Instance Interruption Warning":
+    if event.get("detail-type") == "EC2 Spot Instance Interruption Warning":
         _handle_interruption_warning(event)
-    elif detail_type == "Scheduled Event":
+    elif event.get("task") == "reclaim_check":
         _handle_scheduled_reclaim_check()
+    elif event.get("task") == "record_metrics":
+        _handle_record_metrics()
     else:
         print(f"Unrecognized event, ignoring: {json.dumps(event)}")
 
@@ -139,6 +149,33 @@ def _handle_scheduled_reclaim_check():
 
     _swap_instance(old_instance_id=instance_id, new_instance_id=new_instance_id)
     print(f"Reclaimed spot instance: {instance_id} -> {new_instance_id}")
+
+
+# ---------------------------------------------------------------------------
+# 3) 접속자 수를 CloudWatch 커스텀 지표로 기록
+# ---------------------------------------------------------------------------
+def _handle_record_metrics():
+    instance = _find_running_instance()
+    if instance is None:
+        print("No running Project-tagged instance found, skipping metric")
+        return
+
+    player_count = _get_player_count(instance["InstanceId"])
+    if player_count is None:
+        print("Could not determine player count this cycle, skipping metric")
+        return
+
+    cloudwatch.put_metric_data(
+        Namespace=f"{PROJECT_NAME}/GameServer",
+        MetricData=[
+            {
+                "MetricName": "PlayerCount",
+                "Value": player_count,
+                "Unit": "Count",
+            }
+        ],
+    )
+    print(f"Recorded PlayerCount={player_count}")
 
 
 def _find_running_instance():

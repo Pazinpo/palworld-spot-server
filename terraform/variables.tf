@@ -112,3 +112,9 @@ variable "spot_reclaim_check_interval_minutes" {
   type        = number
   default     = 30
 }
+
+variable "metrics_check_interval_minutes" {
+  description = "접속자 수를 확인해서 CloudWatch 커스텀 지표(PlayerCount)로 기록하는 간격(분)"
+  type        = number
+  default     = 5
+}

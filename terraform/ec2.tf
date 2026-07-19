@@ -55,6 +55,17 @@ resource "aws_instance" "palworld" {
   tags = {
     Name = "${var.project_name}-server"
   }
+
+  lifecycle {
+    # user_data 변경은 이미 떠있는 인스턴스에 적용하지 않는다. AWS는 실행 중인
+    # 인스턴스의 user_data를 바꾸려면 정지->수정->재시작을 거치는데, 스팟
+    # 인스턴스는 수동으로 정지시키면 spot request가 "disabled" 상태로 빠져서
+    # 재시작이 즉시 보장되지 않는다 (실제로 이 문제로 서버가 잠깐 내려간 적
+    # 있음). install-palworld.sh를 고쳐도 새 코드는 aws_ssm_parameter.user_data
+    # 를 통해 앞으로 Lambda가 새로 띄우는 인스턴스에만 적용되며, 이미 떠있는
+    # 이 인스턴스는 그대로 둔다.
+    ignore_changes = [user_data]
+  }
 }
 
 resource "aws_eip_association" "palworld" {

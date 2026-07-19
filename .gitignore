@@ -1,0 +1,19 @@
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+*.tfplan
+
+# Lambda build artifacts
+lambda/*.zip
+
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings
+.claude/settings.local.json

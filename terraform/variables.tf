@@ -1,0 +1,102 @@
+variable "aws_region" {
+  description = "배포 리전"
+  type        = string
+  default     = "ap-northeast-2"
+}
+
+variable "project_name" {
+  description = "리소스 태그/이름에 사용할 프로젝트 식별자"
+  type        = string
+  default     = "palworld"
+}
+
+variable "instance_type" {
+  description = "팰월드 서버 인스턴스 타입"
+  type        = string
+  default     = "t3.large"
+}
+
+variable "spot_max_price" {
+  description = "스팟 최대 입찰가 (비워두면 온디맨드 가격을 상한으로 사용)"
+  type        = string
+  default     = null
+}
+
+variable "root_volume_size" {
+  description = "루트 볼륨 크기 (GB)"
+  type        = number
+  default     = 20
+}
+
+variable "data_volume_size" {
+  description = "세이브 데이터용 EBS 볼륨 크기 (GB)"
+  type        = number
+  default     = 20
+}
+
+variable "data_volume_device_name" {
+  description = "세이브 데이터 EBS 볼륨을 붙일 디바이스 이름"
+  type        = string
+  default     = "/dev/sdf"
+}
+
+variable "allowed_cidr_blocks" {
+  description = "팰월드 게임 포트 접속을 허용할 CIDR 목록 (친구들이 여러 곳에서 접속하므로 기본은 전체 허용)"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
+variable "key_name" {
+  description = "(선택) SSH 접속용 EC2 키 페어 이름. SSM Session Manager를 기본 접속 수단으로 쓰므로 비워둬도 됨"
+  type        = string
+  default     = null
+}
+
+variable "server_name" {
+  description = "팰월드 서버 이름 (서버 목록에 표시)"
+  type        = string
+  default     = "My Palworld Spot Server"
+}
+
+variable "server_description" {
+  description = "팰월드 서버 설명"
+  type        = string
+  default     = "Friends-only Palworld server on AWS Spot"
+}
+
+variable "server_password" {
+  description = "(선택) 서버 접속 비밀번호. 비워두면 비밀번호 없이 접속 가능"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "admin_password" {
+  description = "팰월드 관리자(RCON/REST API) 비밀번호. 반드시 지정해야 함"
+  type        = string
+  sensitive   = true
+}
+
+variable "max_players" {
+  description = "최대 동시 접속 인원"
+  type        = number
+  default     = 4
+}
+
+variable "cpu_credit_balance_alarm_threshold" {
+  description = "CPUCreditBalance 알람 임계값 (이 값 이하로 떨어지면 알람)"
+  type        = number
+  default     = 50
+}
+
+variable "alarm_notification_email" {
+  description = "(선택) CloudWatch 알람을 받을 이메일 주소. 비워두면 SNS 구독을 생성하지 않음"
+  type        = string
+  default     = ""
+}
+
+variable "lambda_timeout" {
+  description = "스팟 중단 대응 Lambda의 타임아웃(초)"
+  type        = number
+  default     = 100
+}

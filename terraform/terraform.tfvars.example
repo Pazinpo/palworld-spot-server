@@ -1,0 +1,18 @@
+# 이 파일을 terraform.tfvars 로 복사한 뒤 값을 채워서 사용하세요.
+# terraform.tfvars 는 비밀번호를 담고 있으니 git에 커밋하지 마세요 (.gitignore 처리됨).
+
+aws_region   = "ap-northeast-2"
+project_name = "palworld"
+
+server_name        = "우리끼리 팰월드"
+server_description = "친구 서버 - 초대받은 사람만"
+max_players        = 4
+
+# 반드시 지정. RCON/REST API 관리자 비밀번호로 쓰입니다.
+admin_password = "CHANGE_ME_STRONG_PASSWORD"
+
+# 접속 비밀번호를 걸고 싶으면 값을 채우고, 필요 없으면 빈 문자열("")로 두세요.
+server_password = ""
+
+# (선택) CPUCreditBalance 알람을 이메일로 받고 싶으면 채우세요.
+alarm_notification_email = ""

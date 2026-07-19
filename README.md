@@ -21,6 +21,24 @@
 
 아키텍처 자세한 내용이랑 왜 이렇게 짰는지는 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)에 정리해뒀다.
 
+## 대략 얼마 나오나
+
+AZ(가용영역)마다 스팟 가격이 꽤 다르길래(같은 서울 리전이라 지연시간 차이는
+없음) 비용 예측이 쉽게 `ap-northeast-2d`로 고정해뒀다(`availability_zone`
+변수). 이 AZ 기준으로 대충 이 정도 나온다 (2026-07 조회 기준, 환율 1,400원 가정):
+
+| 항목 | 월 예상 비용 |
+|---|---|
+| EC2 t3.large 스팟 (24시간) | ~$12.5 (약 17,500원) |
+| EBS gp3 40GB (루트 20 + 데이터 20) | ~$3.7 (약 5,100원) |
+| Elastic IP (2024년부터 붙어있어도 시간당 과금됨) | ~$3.7 (약 5,100원) |
+| CloudWatch 알람 / SSM 파라미터 등 | ~$0.15 (약 200원) |
+| **합계** | **약 $20 / 28,000원** |
+
+스팟 가격은 실시간으로 바뀌니 이건 어디까지나 참고용이고, 정확한 값은
+`aws ec2 describe-spot-price-history --region ap-northeast-2 --instance-types
+t3.large --product-descriptions "Linux/UNIX"` 로 직접 확인하는 게 제일 정확하다.
+
 ## 준비물
 
 - Terraform >= 1.7

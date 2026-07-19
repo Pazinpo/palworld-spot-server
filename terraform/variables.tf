@@ -10,6 +10,12 @@ variable "project_name" {
   default     = "palworld"
 }
 
+variable "availability_zone" {
+  description = "배포할 가용영역. 같은 리전 안에서는 지연시간 차이가 사실상 없지만 스팟 가격은 AZ마다 꽤 다르므로, 비용 예측을 위해 고정해서 쓴다 (기본값은 조회 시점 기준 가장 저렴했던 2d)"
+  type        = string
+  default     = "ap-northeast-2d"
+}
+
 variable "instance_type" {
   description = "팰월드 서버 인스턴스 타입"
   type        = string

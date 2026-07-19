@@ -5,10 +5,17 @@ data "aws_vpc" "default" {
   default = true
 }
 
+# 스팟 가격은 AZ마다 꽤 차이가 나는 반면(같은 서울 리전 안이라 지연시간 차이는
+# 사실상 없음), 비용 예측이 가능하도록 var.availability_zone으로 고정한다.
 data "aws_subnets" "default" {
   filter {
     name   = "vpc-id"
     values = [data.aws_vpc.default.id]
+  }
+
+  filter {
+    name   = "availability-zone"
+    values = [var.availability_zone]
   }
 }
 

@@ -114,7 +114,23 @@ if [ ! -f /home/steam/steamcmd/steamcmd.sh ]; then
   su - steam -c "curl -sqL 'https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz' | tar zxvf - -C /home/steam/steamcmd"
 fi
 
-su - steam -c "/home/steam/steamcmd/steamcmd.sh +force_install_dir $GAME_DIR +login anonymous +app_update 2394010 validate +quit"
+# steamcmd는 첫 실행에서 "Missing configuration" 류의 일시적 에러로
+# 실패하는 경우가 흔하다 (appinfo 캐시를 아직 못 받아온 상태). 그래서
+# 실패하면 몇 번 재시도한다. set -e 때문에 이 명령 자체가 실패해서
+# 스크립트가 통째로 죽으면 뒤의 서비스 등록까지 다 같이 안 되니 여기서
+# 확실히 성공시키고 넘어가야 한다.
+STEAMCMD_INSTALL="/home/steam/steamcmd/steamcmd.sh +force_install_dir $GAME_DIR +login anonymous +app_update 2394010 validate +quit"
+for attempt in 1 2 3 4 5; do
+  if su - steam -c "$STEAMCMD_INSTALL"; then
+    break
+  fi
+  echo "steamcmd install attempt $attempt failed, retrying in 10s..." >&2
+  if [ "$attempt" -eq 5 ]; then
+    echo "ERROR: steamcmd install failed after 5 attempts" >&2
+    exit 1
+  fi
+  sleep 10
+done
 
 # ---- 서버 설정 파일 (최초 1회만 생성) ----
 CONFIG_DIR="$GAME_DIR/Pal/Saved/Config/LinuxServer"

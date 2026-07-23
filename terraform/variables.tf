@@ -124,3 +124,9 @@ variable "snapshot_retention_count" {
   type        = number
   default     = 7
 }
+
+variable "standby_check_interval_minutes" {
+  description = "예비(warm standby) 온디맨드 인스턴스의 준비 상태를 확인/유지하는 간격(분)"
+  type        = number
+  default     = 15
+}

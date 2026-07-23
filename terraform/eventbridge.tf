@@ -62,3 +62,28 @@ resource "aws_lambda_permission" "allow_eventbridge_metrics_schedule" {
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.metrics_schedule.arn
 }
+
+# 예비(warm standby) 온디맨드 인스턴스를 주기적으로 준비/유지시킨다.
+# 없으면 새로 띄우고, 준비(패키지+SteamCMD) 끝났으면 정지시켜서 비용
+# 없이 대기시키고, 이미 정지 상태면 그대로 둔다. 스팟->온디맨드 페일오버
+# 시 이 인스턴스를 재활용하면 처음부터 새로 띄우는 것보다 훨씬 빠르다.
+resource "aws_cloudwatch_event_rule" "standby_schedule" {
+  name                = "${var.project_name}-standby-schedule"
+  description         = "예비 온디맨드 인스턴스 준비 상태 유지"
+  schedule_expression = "rate(${var.standby_check_interval_minutes} minutes)"
+}
+
+resource "aws_cloudwatch_event_target" "standby_lambda" {
+  rule      = aws_cloudwatch_event_rule.standby_schedule.name
+  target_id = "standby-handler"
+  arn       = aws_lambda_function.spot_interruption_handler.arn
+  input     = jsonencode({ task = "ensure_standby" })
+}
+
+resource "aws_lambda_permission" "allow_eventbridge_standby_schedule" {
+  statement_id  = "AllowExecutionFromEventBridgeStandbySchedule"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.spot_interruption_handler.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.standby_schedule.arn
+}

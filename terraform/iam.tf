@@ -79,6 +79,7 @@ data "aws_iam_policy_document" "lambda_failover" {
       "ec2:RunInstances",
       "ec2:TerminateInstances",
       "ec2:StopInstances",
+      "ec2:StartInstances",
       "ec2:CreateTags",
       "ec2:AttachVolume",
       "ec2:DetachVolume",
@@ -107,9 +108,12 @@ data "aws_iam_policy_document" "lambda_failover" {
   }
 
   statement {
-    sid       = "ReadUserDataParameter"
-    actions   = ["ssm:GetParameter"]
-    resources = [aws_ssm_parameter.user_data.arn]
+    sid     = "ReadUserDataParameter"
+    actions = ["ssm:GetParameter"]
+    resources = [
+      aws_ssm_parameter.user_data.arn,
+      aws_ssm_parameter.standby_user_data.arn,
+    ]
   }
 
   statement {

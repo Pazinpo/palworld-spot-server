@@ -54,6 +54,7 @@ resource "aws_instance" "palworld" {
 
   tags = {
     Name = "${var.project_name}-server"
+    Role = "server"
   }
 
   lifecycle {

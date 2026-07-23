@@ -24,16 +24,17 @@ resource "aws_lambda_function" "spot_interruption_handler" {
 
   environment {
     variables = {
-      PROJECT_NAME             = var.project_name
-      DATA_VOLUME_ID           = aws_ebs_volume.palworld_data.id
-      DATA_VOLUME_DEVICE       = var.data_volume_device_name
-      EIP_ALLOCATION_ID        = aws_eip.palworld.id
-      SECURITY_GROUP_ID        = aws_security_group.palworld.id
-      SUBNET_ID                = data.aws_subnet.selected.id
-      AMI_ID                   = data.aws_ssm_parameter.ubuntu_ami.value
-      INSTANCE_PROFILE_NAME    = aws_iam_instance_profile.palworld.name
-      INSTANCE_TYPE            = var.instance_type
-      USER_DATA_PARAMETER_NAME = aws_ssm_parameter.user_data.name
+      PROJECT_NAME                     = var.project_name
+      DATA_VOLUME_ID                   = aws_ebs_volume.palworld_data.id
+      DATA_VOLUME_DEVICE               = var.data_volume_device_name
+      EIP_ALLOCATION_ID                = aws_eip.palworld.id
+      SECURITY_GROUP_ID                = aws_security_group.palworld.id
+      SUBNET_ID                        = data.aws_subnet.selected.id
+      AMI_ID                           = data.aws_ssm_parameter.ubuntu_ami.value
+      INSTANCE_PROFILE_NAME            = aws_iam_instance_profile.palworld.name
+      INSTANCE_TYPE                    = var.instance_type
+      USER_DATA_PARAMETER_NAME         = aws_ssm_parameter.user_data.name
+      STANDBY_USER_DATA_PARAMETER_NAME = aws_ssm_parameter.standby_user_data.name
     }
   }
 }

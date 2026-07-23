@@ -8,3 +8,12 @@ resource "aws_ssm_parameter" "user_data" {
   tier  = "Advanced"
   value = local.user_data
 }
+
+# 예비(warm standby) 인스턴스용 경량 User Data. 세이브 볼륨을 건드리지
+# 않고 패키지/SteamCMD 부트스트랩만 하므로 별도로 렌더링해서 저장한다.
+resource "aws_ssm_parameter" "standby_user_data" {
+  name  = "/${var.project_name}/standby-user-data"
+  type  = "String"
+  tier  = "Advanced"
+  value = file("${path.module}/../scripts/warm-standby.sh")
+}

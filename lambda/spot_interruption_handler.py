@@ -333,14 +333,14 @@ def _is_standby_ready(instance_id):
             InstanceIds=[instance_id],
             DocumentName="AWS-RunShellScript",
             Parameters={"commands": ["test -f /tmp/standby-ready && echo READY || echo NOT_READY"]},
-            TimeoutSeconds=20,
+            TimeoutSeconds=30,  # SSM SendCommand는 30초 미만을 허용하지 않는다
         )
         command_id = send_resp["Command"]["CommandId"]
     except Exception as exc:  # noqa: BLE001 - SSM agent may not be registered yet
         print(f"Standby readiness check failed: {exc}")
         return False
 
-    deadline = time.time() + 20
+    deadline = time.time() + 30
     while time.time() < deadline:
         time.sleep(2)
         try:
@@ -424,7 +424,7 @@ def _announce(instance_id, message):
             InstanceIds=[instance_id],
             DocumentName="AWS-RunShellScript",
             Parameters={"commands": [script]},
-            TimeoutSeconds=15,
+            TimeoutSeconds=30,  # SSM SendCommand는 30초 미만을 허용하지 않는다
         )
     except Exception as exc:  # noqa: BLE001 - best-effort
         print(f"Announce failed (continuing with failover anyway): {exc}")

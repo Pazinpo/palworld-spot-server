@@ -102,9 +102,9 @@ variable "alarm_notification_email" {
 }
 
 variable "lambda_timeout" {
-  description = "스팟 중단 대응 Lambda의 타임아웃(초)"
+  description = "Lambda의 타임아웃(초). 스팟 중단 대응 자체는 16초 안팎이면 끝나지만, 게임 업데이트 체크(task=check_game_update)는 SteamCMD 검증 때문에 몇 분 걸릴 수 있어서 넉넉하게 잡는다"
   type        = number
-  default     = 100
+  default     = 400
 }
 
 variable "spot_reclaim_check_interval_minutes" {
@@ -129,4 +129,10 @@ variable "standby_check_interval_minutes" {
   description = "예비(warm standby) 온디맨드 인스턴스의 준비 상태를 확인/유지하는 간격(분)"
   type        = number
   default     = 15
+}
+
+variable "game_update_check_interval_hours" {
+  description = "팰월드 서버 SteamCMD 업데이트 확인 주기(시간). 접속자가 없을 때만 실제로 업데이트를 시도한다"
+  type        = number
+  default     = 6
 }

@@ -87,3 +87,27 @@ resource "aws_lambda_permission" "allow_eventbridge_standby_schedule" {
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.standby_schedule.arn
 }
+
+# 팰월드 클라이언트는 Steam에서 자동 업데이트되지만 서버는 그렇지 않다.
+# 접속자가 없을 때만 SteamCMD로 업데이트를 시도해서, 버전 불일치로
+# 접속이 안 되는 상황을 사람이 매번 수동으로 안 챙겨도 되게 한다.
+resource "aws_cloudwatch_event_rule" "game_update_schedule" {
+  name                = "${var.project_name}-game-update-schedule"
+  description         = "접속자가 없을 때 팰월드 서버 SteamCMD 업데이트 확인"
+  schedule_expression = "rate(${var.game_update_check_interval_hours} hours)"
+}
+
+resource "aws_cloudwatch_event_target" "game_update_lambda" {
+  rule      = aws_cloudwatch_event_rule.game_update_schedule.name
+  target_id = "game-update-handler"
+  arn       = aws_lambda_function.spot_interruption_handler.arn
+  input     = jsonencode({ task = "check_game_update" })
+}
+
+resource "aws_lambda_permission" "allow_eventbridge_game_update_schedule" {
+  statement_id  = "AllowExecutionFromEventBridgeGameUpdateSchedule"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.spot_interruption_handler.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.game_update_schedule.arn
+}

@@ -10,6 +10,7 @@ crash.*.log
 
 # Lambda build artifacts
 lambda/*.zip
+lambda/__pycache__/
 
 # OS / editor
 .DS_Store

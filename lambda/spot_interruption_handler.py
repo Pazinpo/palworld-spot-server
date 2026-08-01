@@ -31,7 +31,17 @@
    정지 상태로 준비돼 있으면 처음부터 새로 띄우는 대신 그냥 "시작"만
    시켜서 쓴다 - apt/SteamCMD 설치 시간을 통째로 아낄 수 있다.
 
-2), 3), 4)번은 모두 EventBridge 스케줄 규칙이 트리거하는데, EventBridge의
+5) 팰월드 게임 업데이트 확인 (기본 6시간 간격, task=check_game_update)
+   - 팰월드 클라이언트는 Steam에서 자동 업데이트되지만 서버는 아니라서,
+     그냥 두면 버전 불일치로 접속이 안 되는 상황이 생긴다.
+   - 접속자가 있으면 아무것도 안 하고 다음 주기를 기다린다.
+   - 접속자가 없으면 서버를 멈추고 SteamCMD로 업데이트를 시도한다.
+     SteamCMD가 실패 상태를 매니페스트 파일에 남겨두고 재시도 때마다
+     같은 에러를 반복하는 고질적인 버그가 있어서, 업데이트 후 buildid가
+     기대값과 다르면 매니페스트를 지우고 한 번 더 시도한다.
+   - 버전이 실제로 바뀌었으면 SNS로 알림을 보낸다(설정돼 있는 경우).
+
+2)~5)번은 모두 EventBridge 스케줄 규칙이 트리거하는데, EventBridge의
 기본 Scheduled Event 포맷 대신 `input`으로 `{"task": "..."}` 를 넘겨서
 어떤 스케줄인지 구분한다 (terraform/eventbridge.tf 참고).
 
@@ -49,6 +59,7 @@ from botocore.exceptions import ClientError
 ec2 = boto3.client("ec2")
 ssm = boto3.client("ssm")
 cloudwatch = boto3.client("cloudwatch")
+sns = boto3.client("sns")
 
 PROJECT_NAME = os.environ["PROJECT_NAME"]
 DATA_VOLUME_ID = os.environ["DATA_VOLUME_ID"]
@@ -61,6 +72,7 @@ INSTANCE_PROFILE_NAME = os.environ["INSTANCE_PROFILE_NAME"]
 INSTANCE_TYPE = os.environ["INSTANCE_TYPE"]
 USER_DATA_PARAMETER_NAME = os.environ["USER_DATA_PARAMETER_NAME"]
 STANDBY_USER_DATA_PARAMETER_NAME = os.environ["STANDBY_USER_DATA_PARAMETER_NAME"]
+SNS_TOPIC_ARN = os.environ.get("SNS_TOPIC_ARN", "")
 
 SSM_COMMAND_TIMEOUT_SECONDS = 45
 SSM_POLL_INTERVAL_SECONDS = 3
@@ -75,11 +87,22 @@ SPOT_MARKET_OPTIONS = {
 
 MOUNT_POINT = "/mnt/palworld-data"
 
+# 팰월드 REST API가 가끔 (아마 SteamCMD 검증 직후처럼 CPU를 많이 쓰는
+# 순간이거나 그냥 일시적으로) 빈 응답을 줄 때가 있어서, 실패하면 짧게
+# 재시도한다. 그래도 안 되면 빈 문자열을 출력해서 Lambda가 "확인 불가"로
+# (안전하게 "접속자 있다"로 간주하도록) 처리하게 한다.
 PLAYER_COUNT_SCRIPT = (
     "ADMIN_PW=$(grep -oP 'AdminPassword=\"\\K[^\"]+' "
-    f"{MOUNT_POINT}/Palworld/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini) && "
-    "curl -sf -u admin:$ADMIN_PW http://127.0.0.1:8212/v1/api/players "
-    "| python3 -c 'import json,sys; print(len(json.load(sys.stdin)[\"players\"]))'"
+    f"{MOUNT_POINT}/Palworld/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini)\n"
+    "for i in 1 2 3; do\n"
+    "  RESPONSE=$(curl -sf -u admin:$ADMIN_PW http://127.0.0.1:8212/v1/api/players)\n"
+    '  if [ -n "$RESPONSE" ]; then\n'
+    "    echo \"$RESPONSE\" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)[\"players\"]))'\n"
+    "    exit 0\n"
+    "  fi\n"
+    "  sleep 2\n"
+    "done\n"
+    "exit 1\n"
 )
 
 # 페일오버 직전, 접속자에게 갑자기 끊기는 것보다는 낫도록 안내 방송을 보낸다.
@@ -132,6 +155,34 @@ ACTIVATE_STANDBY_SCRIPT_TEMPLATE = (
     "systemctl start palworld\n"
 )
 
+# 접속자가 없을 때 팰월드 서버를 SteamCMD로 업데이트한다. steamcmd가
+# 실패 상태(StateFlags=6)를 매니페스트 파일에 남겨두고 재시도할 때마다
+# 다운로드도 안 해보고 같은 에러를 반복하는 오래된 버그가 있어서(실제로
+# 겪었음), 업데이트 후 buildid가 TargetBuildID와 다르면 매니페스트를
+# 지우고 한 번 더 시도한다. 마지막 줄에 RESULT:이전빌드:이후빌드 를
+# 출력해서 Lambda가 파싱할 수 있게 한다.
+GAME_UPDATE_SCRIPT = (
+    "set -e\n"
+    f"MOUNT={MOUNT_POINT}\n"
+    'MANIFEST="$MOUNT/Palworld/steamapps/appmanifest_2394010.acf"\n'
+    "get_buildid() { grep -oP '\"buildid\"\\s*\"\\K[0-9]+' \"$MANIFEST\" 2>/dev/null || echo unknown; }\n"
+    "get_target()  { grep -oP '\"TargetBuildID\"\\s*\"\\K[0-9]+' \"$MANIFEST\" 2>/dev/null || echo unknown; }\n"
+    "BEFORE=$(get_buildid)\n"
+    "systemctl stop palworld\n"
+    "sleep 3\n"
+    'run_update() { su - steam -c "/home/steam/steamcmd/steamcmd.sh +force_install_dir $MOUNT/Palworld +login anonymous +app_update 2394010 validate +quit"; }\n'
+    "run_update || true\n"
+    'if [ "$(get_buildid)" != "$(get_target)" ]; then\n'
+    "  echo 'First attempt did not fully apply, clearing stuck manifest and retrying'\n"
+    '  rm -f "$MANIFEST"\n'
+    "  run_update || true\n"
+    "fi\n"
+    "AFTER=$(get_buildid)\n"
+    "systemctl start palworld\n"
+    "sleep 10\n"
+    'echo "RESULT:$BEFORE:$AFTER"\n'
+)
+
 
 def handler(event, context):
     if event.get("detail-type") == "EC2 Spot Instance Interruption Warning":
@@ -142,6 +193,8 @@ def handler(event, context):
         _handle_record_metrics()
     elif event.get("task") == "ensure_standby":
         _handle_ensure_standby()
+    elif event.get("task") == "check_game_update":
+        _handle_check_game_update()
     else:
         print(f"Unrecognized event, ignoring: {json.dumps(event)}")
 
@@ -404,6 +457,83 @@ def _find_running_instance():
     )
     instances = [i for r in resp["Reservations"] for i in r["Instances"]]
     return instances[0] if instances else None
+
+
+# ---------------------------------------------------------------------------
+# 5) 접속자가 없을 때 팰월드 서버 SteamCMD 업데이트 확인
+# ---------------------------------------------------------------------------
+def _handle_check_game_update():
+    instance = _find_running_instance()
+    if instance is None:
+        print("No running Project-tagged instance found, skipping game update check")
+        return
+
+    instance_id = instance["InstanceId"]
+    player_count = _get_player_count(instance_id)
+    if player_count != 0:
+        print(f"players={player_count} (or unknown) - skipping game update check while someone might be playing")
+        return
+
+    print("No players connected - checking for a Palworld game update")
+    result = _run_game_update(instance_id)
+    if result is None:
+        print("Could not determine game update result this cycle")
+        return
+
+    before, after = result
+    if before == after:
+        print(f"Already up to date (buildid={after})")
+        return
+
+    print(f"Updated Palworld server: buildid {before} -> {after}")
+    _notify(f"Palworld 서버가 자동 업데이트됐습니다 (buildid {before} -> {after})")
+
+
+def _run_game_update(instance_id):
+    try:
+        send_resp = ssm.send_command(
+            InstanceIds=[instance_id],
+            DocumentName="AWS-RunShellScript",
+            Parameters={"commands": [GAME_UPDATE_SCRIPT]},
+            TimeoutSeconds=280,
+        )
+        command_id = send_resp["Command"]["CommandId"]
+    except Exception as exc:  # noqa: BLE001 - SSM/agent not ready, etc.
+        print(f"Game update SSM send_command failed: {exc}")
+        return None
+
+    deadline = time.time() + 280
+    while time.time() < deadline:
+        time.sleep(5)
+        try:
+            inv = ssm.get_command_invocation(CommandId=command_id, InstanceId=instance_id)
+        except ssm.exceptions.InvocationDoesNotExist:
+            continue
+
+        status = inv["Status"]
+        if status == "Success":
+            for line in inv["StandardOutputContent"].splitlines():
+                # SteamCMD가 ANSI 색상 코드(예: \x1b[0m)를 줄 맨 앞에 붙여서
+                # 출력하는 경우가 있어서 startswith가 아니라 부분 문자열로 찾는다.
+                if "RESULT:" in line:
+                    result_part = line[line.index("RESULT:") :]
+                    _, before, after = result_part.split(":")
+                    return before, after
+            print(f"Update script succeeded but no RESULT line found: {inv['StandardOutputContent']!r}")
+            return None
+        if status in ("Failed", "Cancelled", "TimedOut"):
+            print(f"Game update command ended with status={status}: {inv.get('StandardErrorContent')}")
+            return None
+
+    print("Timed out waiting for game update result")
+    return None
+
+
+def _notify(message):
+    if not SNS_TOPIC_ARN:
+        print(f"(no SNS topic configured) {message}")
+        return
+    sns.publish(TopicArn=SNS_TOPIC_ARN, Subject=f"[{PROJECT_NAME}] 서버 알림", Message=message)
 
 
 # ---------------------------------------------------------------------------

@@ -35,6 +35,7 @@ resource "aws_lambda_function" "spot_interruption_handler" {
       INSTANCE_TYPE                    = var.instance_type
       USER_DATA_PARAMETER_NAME         = aws_ssm_parameter.user_data.name
       STANDBY_USER_DATA_PARAMETER_NAME = aws_ssm_parameter.standby_user_data.name
+      SNS_TOPIC_ARN                    = var.alarm_notification_email != "" ? aws_sns_topic.alerts[0].arn : ""
     }
   }
 }

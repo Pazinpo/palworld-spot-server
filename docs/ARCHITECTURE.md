@@ -268,6 +268,35 @@ InstanceId} MetricName="..."', ...)` 표현식을 써서, 인스턴스가
 4. `PalWorldSettings.ini` 최초 1회 생성 (서버 이름/설명/비밀번호/최대 인원 등)
 5. `systemd` 서비스(`palworld.service`) 등록 및 기동 - 크래시 시 자동 재시작
 
+## 8. 팰월드 자동 업데이트 - task=check_game_update
+
+팰월드 클라이언트는 Steam을 통해 자동 업데이트되지만, 서버 쪽 SteamCMD
+설치본은 사람이 직접 업데이트해주기 전까지 그대로 멈춰있다. 그냥 두면
+클라이언트/서버 버전이 어긋나서 접속 자체가 안 되는 상황이 생긴다
+(실제로 겪었다).
+
+`task=check_game_update` 스케줄(기본 6시간 간격,
+`game_update_check_interval_hours` 변수)이 이걸 자동으로 해결한다:
+
+1. 접속자 수를 확인한다.
+2. **접속자가 있으면** 아무것도 안 하고 다음 주기를 기다린다 (플레이 중에
+   서버를 내리고 싶지 않으므로).
+3. **접속자가 없으면** 서버를 정지 → `steamcmd +app_update 2394010
+   validate` 실행 → 서버 재시작.
+4. SteamCMD는 업데이트 실패 상태(`StateFlags=6`)를 매니페스트 파일에
+   남겨두고, 재시도할 때마다 다운로드도 안 해보고 같은 에러를 반복하는
+   오래된 버그가 있다(실제로 겪었음). 그래서 업데이트 후 설치된
+   `buildid`가 `TargetBuildID`와 다르면 매니페스트 파일(`appmanifest_
+   2394010.acf`)을 지우고 한 번 더 시도한다.
+5. 버전이 실제로 바뀌었으면(`buildid`가 달라지면) SNS로 알림을 보낸다
+   (`alarm_notification_email` 변수가 설정된 경우).
+
+접속자 수 확인은 스팟 중단 대응과 같은 로직(`_get_player_count`)을
+재사용한다. 팰월드 REST API가 가끔(아마 SteamCMD 검증처럼 CPU를 많이
+쓰는 직후) 빈 응답을 주는 걸 실제로 관찰해서, curl을 최대 3번까지
+짧게 재시도하도록 만들었다. 그래도 확인이 안 되면 다른 스케줄들과
+동일하게 "접속자가 있다"고 안전하게 간주하고 건너뛴다.
+
 ## 왜 Amazon Linux가 아니라 Ubuntu인가
 
 SteamCMD는 32bit 바이너리를 필요로 하는데, Amazon Linux 2023은 32bit

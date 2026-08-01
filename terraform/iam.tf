@@ -121,6 +121,17 @@ data "aws_iam_policy_document" "lambda_failover" {
     actions   = ["cloudwatch:PutMetricData"]
     resources = ["*"] # PutMetricData는 리소스 수준 제한을 지원하지 않음
   }
+
+  # alarm_notification_email이 설정된 경우에만 SNS 토픽이 존재하므로,
+  # 그럴 때만 이 statement 자체를 정책에 넣는다 (dynamic block).
+  dynamic "statement" {
+    for_each = var.alarm_notification_email != "" ? [1] : []
+    content {
+      sid       = "PublishGameUpdateNotification"
+      actions   = ["sns:Publish"]
+      resources = [aws_sns_topic.alerts[0].arn]
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "lambda_failover" {

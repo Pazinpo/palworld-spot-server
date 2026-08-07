@@ -5,27 +5,7 @@
 
 ## 전체 구성
 
-```
-                        ┌─────────────────────────┐
-                        │   Elastic IP (고정 IP)    │
-                        └────────────┬─────────────┘
-                                     │
-                        ┌────────────▼─────────────┐
-                        │   EC2 (2vCPU/8GB, Spot)   │◄── 세이브 데이터 EBS 볼륨
-                        │   Palworld Dedicated Srv  │    (루트 볼륨과 분리)
-                        └────────────┬─────────────┘
-                                     │ Spot Interruption Warning (2분 전)
-                        ┌────────────▼─────────────┐
-                        │   EventBridge Rule        │
-                        └────────────┬─────────────┘
-                                     │
-                        ┌────────────▼─────────────┐
-                        │   Lambda                  │
-                        │   1) SSM으로 접속자 수 확인 │
-                        │   2) 0명 -> 방치            │
-                        │   3) 있으면 -> 온디맨드 대체 │
-                        └───────────────────────────┘
-```
+![Palworld Dedicated Server 아키텍처](images/architecture.png)
 
 ## 1. 컴퓨팅 - 스팟 인스턴스 + persistent/stop
 
@@ -227,6 +207,13 @@ Scheduled Event로 깨운다. Lambda는 이벤트의 `detail-type` 으로 두 �
 - **RCON 대신 REST API**: 안내 방송은 원래 RCON의 `Broadcast` 명령으로도
   가능하지만, Pocketpair가 RCON 자체를 deprecated 처리한다고 공지해서
   대신 REST API `/v1/api/announce`를 쓴다.
+- **destroy 시 Terraform이 추적하지 못하는 리소스**: Lambda가 boto3로 직접
+  띄운 예비 인스턴스나 페일오버로 대체 기동된 인스턴스는 애초에 Terraform
+  state에 없다. 그래서 `terraform destroy`로 정리해도 이 인스턴스들이
+  붙잡고 있는 보안그룹 등은 삭제가 막힐 수 있다(실제로 겪음 -
+  보안그룹이 "Still destroying..."에서 몇 분간 안 넘어감). 이런 경우
+  `aws ec2 describe-instances`로 남은 인스턴스를 직접 찾아
+  `terminate-instances`로 정리한 뒤 다시 destroy하면 된다.
 
 ## 5. 모니터링 - CPUCreditBalance 알람
 
